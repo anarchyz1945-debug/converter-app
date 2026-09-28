@@ -4,13 +4,13 @@ from PIL import Image
 import cairosvg
 
 st.set_page_config(
-    page_title="Batch Converter (No ZIP)",
+    page_title="File Converter",
     page_icon="⚡",
     layout="centered"
 )
 
-st.title("⚡ Batch File Converter")
-st.caption("Konversi banyak file sekaligus tanpa ZIP — langsung download per file!")
+st.title("⚡ File Converter")
+st.caption("Konversi langsung tanpa ZIP — siap upload ke Microstock")
 
 tab_svg, tab_png = st.tabs(["📐 SVG ke EPS", "🖼️ PNG ke JPG"])
 
@@ -18,93 +18,79 @@ tab_svg, tab_png = st.tabs(["📐 SVG ke EPS", "🖼️ PNG ke JPG"])
 with tab_svg:
     st.subheader("Konversi SVG ke EPS")
     uploaded_svgs = st.file_uploader(
-        "Pilih beberapa file SVG sekaligus",
-        type=["svg"],
-        accept_multiple_files=True,
-        key="uploader_svg_list"
+        "Pilih file SVG (bisa pilih banyak sekaligus)",
+        accept_multiple_files=True
     )
 
     if uploaded_svgs:
-        st.write(f"Total file: **{len(uploaded_svgs)} file**")
+        st.write(f"📁 Terdeteksi: **{len(uploaded_svgs)} file**")
+        st.markdown("---")
         
-        if st.button("🚀 Konversi Semua SVG", key="convert_all_svg"):
-            results = []
-            with st.spinner("Sedang mengonversi semua file SVG ke EPS..."):
-                for uploaded_file in uploaded_svgs:
-                    try:
-                        svg_bytes = uploaded_file.getvalue()
-                        eps_data = cairosvg.svg2eps(bytestring=svg_bytes)
-                        base_name = uploaded_file.name.rsplit(".", 1)[0]
-                        results.append({
-                            "name": f"{base_name}.eps",
-                            "data": eps_data
-                        })
-                    except Exception as e:
-                        st.error(f"Gagal mengonversi {uploaded_file.name}: {e}")
-            st.session_state["converted_eps"] = results
+        for idx, file in enumerate(uploaded_svgs):
+            # Pastikan hanya memproses file berakhiran .svg
+            if not file.name.lower().endswith(".svg"):
+                continue
 
-        # Tampilkan daftar file hasil konversi
-        if "converted_eps" in st.session_state and st.session_state["converted_eps"]:
-            st.success("✅ Semua file selesai dikonversi! Tinggal tap download:")
-            for idx, item in enumerate(st.session_state["converted_eps"]):
+            base_name = file.name.rsplit(".", 1)[0]
+            eps_name = f"{base_name}.eps"
+
+            try:
+                # Konversi langsung di memori
+                svg_data = file.getvalue()
+                eps_data = cairosvg.svg2eps(bytestring=svg_data)
+
                 col1, col2 = st.columns([3, 2])
                 with col1:
-                    st.write(f"📄 **{item['name']}**")
+                    st.write(f"✅ **{eps_name}**")
                 with col2:
                     st.download_button(
                         label="⬇️ Download EPS",
-                        data=item["data"],
-                        file_name=item["name"],
+                        data=eps_data,
+                        file_name=eps_name,
                         mime="application/postscript",
-                        key=f"dl_eps_{idx}"
+                        key=f"dl_eps_{file.name}_{idx}"
                     )
+            except Exception as e:
+                st.error(f"Gagal mengonversi {file.name}: {e}")
 
 # TAB PNG KE JPG
 with tab_png:
     st.subheader("Konversi PNG ke JPG")
     uploaded_pngs = st.file_uploader(
-        "Pilih beberapa file PNG sekaligus",
-        type=["png"],
-        accept_multiple_files=True,
-        key="uploader_png_list"
+        "Pilih file PNG (bisa pilih banyak sekaligus)",
+        accept_multiple_files=True
     )
 
     if uploaded_pngs:
-        st.write(f"Total gambar: **{len(uploaded_pngs)} file**")
-        
-        if st.button("🚀 Konversi Semua PNG", key="convert_all_png"):
-            results_png = []
-            with st.spinner("Sedang memproses seluruh gambar JPG..."):
-                for uploaded_file in uploaded_pngs:
-                    try:
-                        image = Image.open(uploaded_file)
-                        if image.mode in ("RGBA", "P"):
-                            image = image.convert("RGB")
-                        
-                        jpg_buffer = io.BytesIO()
-                        image.save(jpg_buffer, format="JPEG", quality=100, subsampling=0)
-                        
-                        base_name = uploaded_file.name.rsplit(".", 1)[0]
-                        results_png.append({
-                            "name": f"{base_name}.jpg",
-                            "data": jpg_buffer.getvalue()
-                        })
-                    except Exception as e:
-                        st.error(f"Gagal mengonversi {uploaded_file.name}: {e}")
-            st.session_state["converted_jpg"] = results_png
+        st.write(f"📁 Terdeteksi: **{len(uploaded_pngs)} file**")
+        st.markdown("---")
 
-        # Tampilkan daftar file hasil konversi
-        if "converted_jpg" in st.session_state and st.session_state["converted_jpg"]:
-            st.success("✅ Semua file selesai dikonversi! Tinggal tap download:")
-            for idx, item in enumerate(st.session_state["converted_jpg"]):
+        for idx, file in enumerate(uploaded_pngs):
+            if not file.name.lower().endswith(".png"):
+                continue
+
+            base_name = file.name.rsplit(".", 1)[0]
+            jpg_name = f"{base_name}.jpg"
+
+            try:
+                img = Image.open(file)
+                if img.mode in ("RGBA", "P"):
+                    img = img.convert("RGB")
+
+                buffer = io.BytesIO()
+                img.save(buffer, format="JPEG", quality=100, subsampling=0)
+                jpg_data = buffer.getvalue()
+
                 col1, col2 = st.columns([3, 2])
                 with col1:
-                    st.write(f"🖼️ **{item['name']}**")
+                    st.write(f"✅ **{jpg_name}**")
                 with col2:
                     st.download_button(
                         label="⬇️ Download JPG",
-                        data=item["data"],
-                        file_name=item["name"],
+                        data=jpg_data,
+                        file_name=jpg_name,
                         mime="image/jpeg",
-                        key=f"dl_jpg_{idx}"
+                        key=f"dl_jpg_{file.name}_{idx}"
                     )
+            except Exception as e:
+                st.error(f"Gagal memproses {file.name}: {e}") 

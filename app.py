@@ -12,43 +12,75 @@ st.set_page_config(
 )
 
 st.title("🎨 File Converter")
-st.caption("Konversi SVG ➔ EPS (Vektor Utuh) & PNG ➔ JPG (Kualitas Maksimal)")
+st.caption("Konversi SVG ➔ EPS & PNG ➔ JPG — Multi-upload tanpa refresh halaman")
 
 tab_svg, tab_png = st.tabs(["📐 SVG ke EPS", "🖼️ PNG ke JPG"])
 
 # ==========================================
-# TAB SVG KE EPS (TETAP SAMA SEPERTI ASLINYA)
+# TAB 1: SVG KE EPS (MULTI-UPLOAD & ANTI-REFRESH)
 # ==========================================
 with tab_svg:
     st.subheader("Konversi SVG ke EPS")
-    uploaded_svg = st.file_uploader("Pilih file SVG", type=["svg"])
+    uploaded_svgs = st.file_uploader(
+        "Pilih file SVG (bisa pilih banyak sekaligus)",
+        type=["svg"],
+        accept_multiple_files=True,
+        key="uploader_svg_batch"
+    )
 
-    if uploaded_svg is not None:
-        svg_bytes = uploaded_svg.getvalue()
-        base_name = uploaded_svg.name.rsplit(".", 1)[0]
-        eps_filename = f"{base_name}.eps"
+    if uploaded_svgs:
+        st.write(f"📁 Terpilih: **{len(uploaded_svgs)} file**")
+        st.markdown("---")
 
-        try:
-            eps_data = cairosvg.svg2eps(bytestring=svg_bytes)
-            st.success("✅ File siap diunduh!")
-            st.download_button(
-                label="⬇️ Download File EPS",
-                data=eps_data,
-                file_name=eps_filename,
-                mime="application/postscript"
-            )
-        except Exception as e:
-            st.error(f"Gagal mengonversi file: {e}")
+        for idx, file in enumerate(uploaded_svgs):
+            base_name_svg = file.name.rsplit(".", 1)[0]
+            eps_filename = f"{base_name_svg}.eps"
+
+            try:
+                # Konversi vektor murni dengan cairosvg
+                svg_bytes = file.getvalue()
+                eps_data = cairosvg.svg2eps(bytestring=svg_bytes)
+                b64_eps = base64.b64encode(eps_data).decode()
+
+                col1, col2 = st.columns([3, 2])
+                with col1:
+                    st.write(f"📐 **{eps_filename}**")
+                with col2:
+                    # Tombol download HTML instan (bebas refresh)
+                    html_eps_button = f"""
+                    <a href="data:application/postscript;base64,{b64_eps}" download="{eps_filename}" style="text-decoration: none;">
+                        <button style="
+                            background-color: #FF4B4B;
+                            color: white;
+                            border: none;
+                            padding: 8px 16px;
+                            border-radius: 6px;
+                            font-weight: 500;
+                            font-size: 14px;
+                            cursor: pointer;
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 5px;
+                        ">
+                            ⬇️ Unduh EPS
+                        </button>
+                    </a>
+                    """
+                    components.html(html_eps_button, height=45)
+
+            except Exception as e:
+                st.error(f"Gagal mengonversi {file.name}: {e}")
 
 # ==========================================
-# TAB PNG KE JPG (BISA MULTI-FILE & TANPA REFRESH)
+# TAB 2: PNG KE JPG (MULTI-UPLOAD & ANTI-REFRESH)
 # ==========================================
 with tab_png:
-    st.subheader("Konversi PNG ke JPG (Bisa Banyak File)")
+    st.subheader("Konversi PNG ke JPG")
     uploaded_pngs = st.file_uploader(
         "Pilih gambar PNG (bisa pilih banyak sekaligus)", 
         type=["png"], 
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        key="uploader_png_batch"
     )
 
     if uploaded_pngs:
@@ -67,15 +99,15 @@ with tab_png:
                 jpg_buffer = io.BytesIO()
                 image.save(jpg_buffer, format="JPEG", quality=100, subsampling=0)
                 jpg_bytes = jpg_buffer.getvalue()
-                b64_str = base64.b64encode(jpg_bytes).decode()
+                b64_jpg = base64.b64encode(jpg_bytes).decode()
 
                 col1, col2 = st.columns([3, 2])
                 with col1:
                     st.write(f"🖼️ **{jpg_filename}**")
                 with col2:
-                    # Tombol download instan langsung lewat browser (TIDAK ME-REFRESH HALAMAN)
-                    html_download_button = f"""
-                    <a href="data:image/jpeg;base64,{b64_str}" download="{jpg_filename}" style="text-decoration: none;">
+                    # Tombol download HTML instan (bebas refresh)
+                    html_jpg_button = f"""
+                    <a href="data:image/jpeg;base64,{b64_jpg}" download="{jpg_filename}" style="text-decoration: none;">
                         <button style="
                             background-color: #FF4B4B;
                             color: white;
@@ -93,7 +125,7 @@ with tab_png:
                         </button>
                     </a>
                     """
-                    components.html(html_download_button, height=45)
+                    components.html(html_jpg_button, height=45)
 
             except Exception as e:
-                st.error(f"Gagal mengonversi {file.name}: {e}") 
+                st.error(f"Gagal mengonversi {file.name}: {e}")

@@ -19,10 +19,35 @@ def pad_eps_file(eps_bytes, target_min_bytes=600 * 1024):
     current_size = len(eps_bytes)
     if current_size < target_min_bytes:
         needed_bytes = target_min_bytes - current_size
-        # Tambahkan komentar PostScript yang diabaikan parser vektor
         padding = b"\n% Microstock size padding\n" + (b"% " + b"0" * 60 + b"\n") * (needed_bytes // 63)
         return eps_bytes + padding
     return eps_bytes
+
+# Fungsi konversi preview JPG yang aman untuk semua jenis SVG
+def svg_to_jpg_preview(svg_bytes):
+    try:
+        # Coba render resolusi tinggi
+        png_data = cairosvg.svg2png(bytestring=svg_bytes, scale=3.0)
+    except Exception:
+        # Fallback jika scale gagal karena metadata viewBox hilang
+        png_data = cairosvg.svg2png(bytestring=svg_bytes)
+
+    img = Image.open(io.BytesIO(png_data))
+
+    # Pastikan background putih jika ada transparansi
+    if img.mode in ("RGBA", "LA", "P"):
+        bg = Image.new("RGB", img.size, (255, 255, 255))
+        if "A" in img.mode:
+            bg.paste(img, mask=img.split()[-1])
+        else:
+            bg.paste(img.convert("RGBA"), mask=img.convert("RGBA").split()[-1])
+        img = bg
+    elif img.mode != "RGB":
+        img = img.convert("RGB")
+
+    jpg_buf = io.BytesIO()
+    img.save(jpg_buf, format="JPEG", quality=95)
+    return jpg_buf.getvalue()
 
 tab_mag, tab_svg, tab_png = st.tabs([
     "⭐ SVG ke EPS + JPG (Khusus Magnific)", 
@@ -35,7 +60,7 @@ tab_mag, tab_svg, tab_png = st.tabs([
 # ==========================================================
 with tab_mag:
     st.subheader("Konversi SVG ➔ EPS (>500KB) + JPG Preview")
-    st.caption("Otomatis memenuhi syarat Magnific: ukuran EPS di atas 500KB & bonus file JPG pendamping berdimensi tinggi.")
+    st.caption("Memenuhi syarat Magnific: ukuran EPS di atas 500KB & file JPG pendamping.")
     
     uploaded_mag_svgs = st.file_uploader(
         "Pilih file SVG (bisa pilih banyak)",
@@ -56,28 +81,17 @@ with tab_mag:
             try:
                 svg_bytes = file.getvalue()
 
-                # 1. Konversi EPS & Tambah Padding agar di atas 500 KB
+                # 1. Konversi EPS & Tambah Padding (> 500 KB)
                 raw_eps = cairosvg.svg2eps(bytestring=svg_bytes)
                 padded_eps = pad_eps_file(raw_eps, target_min_bytes=600 * 1024)
                 b64_eps = base64.b64encode(padded_eps).decode()
                 size_kb = round(len(padded_eps) / 1024)
 
-                # 2. Buat Preview JPG Resolusi Tinggi (Lebar 2500px)
-                png_bytes = cairosvg.svg2png(bytestring=svg_bytes, output_width=2500)
-                img = Image.open(io.BytesIO(png_bytes))
-                if img.mode in ("RGBA", "P"):
-                    bg = Image.new("RGB", img.size, (255, 255, 255))
-                    bg.paste(img, mask=img.split()[3])
-                    img = bg
-                else:
-                    img = img.convert("RGB")
-
-                jpg_buf = io.BytesIO()
-                img.save(jpg_buf, format="JPEG", quality=95)
-                jpg_bytes = jpg_buf.getvalue()
+                # 2. Buat Preview JPG (Aman tanpa error dimensi)
+                jpg_bytes = svg_to_jpg_preview(svg_bytes)
                 b64_jpg = base64.b64encode(jpg_bytes).decode()
 
-                # Tampilan Baris & Tombol Download Bebas Refresh
+                # Tampilan Baris & Tombol Download
                 col1, col2 = st.columns([3, 3])
                 with col1:
                     st.write(f"📦 **{base_name}** (`{size_kb} KB`)")

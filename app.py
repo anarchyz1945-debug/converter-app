@@ -1,22 +1,22 @@
 import io
 import re
 import base64
+import zipfile
 import streamlit as st
 import streamlit.components.v1 as components
 from PIL import Image
 import cairosvg
 
-# Hilangkan limit deteksi bom kompresi gambar
 Image.MAX_IMAGE_PIXELS = None
 
 st.set_page_config(
-    page_title="Microstock File Converter",
+    page_title="Microstock Multi-Converter",
     page_icon="🎨",
     layout="centered"
 )
 
 st.title("🎨 Microstock Multi-Converter")
-st.caption("Konversi SVG & PNG siap upload ke Shutterstock, Adobe Stock, dan Magnific/Freepik")
+st.caption("Konversi SVG & PNG siap untuk Shutterstock, Adobe Stock, Magnific, dan Pngtree")
 
 def pad_eps_file(eps_bytes, target_min_bytes=600 * 1024):
     current_size = len(eps_bytes)
@@ -27,10 +27,7 @@ def pad_eps_file(eps_bytes, target_min_bytes=600 * 1024):
     return eps_bytes
 
 def fix_and_render_svg_preview(svg_bytes):
-    # Bersihkan / normalkan isi SVG agar aman dibaca CairoSVG
     svg_text = svg_bytes.decode("utf-8", errors="ignore")
-    
-    # Jika tidak ada viewBox tetapi ada width dan height, buatkan viewBox
     if "viewBox" not in svg_text:
         w_match = re.search(r'width=["\']([0-9.]+)', svg_text)
         h_match = re.search(r'height=["\']([0-9.]+)', svg_text)
@@ -38,17 +35,12 @@ def fix_and_render_svg_preview(svg_bytes):
             w, h = w_match.group(1), h_match.group(1)
             svg_text = re.sub(r'<svg', f'<svg viewBox="0 0 {w} {h}"', svg_text, count=1)
         else:
-            # Fallback default viewBox standar
             svg_text = re.sub(r'<svg', '<svg viewBox="0 0 1000 1000"', svg_text, count=1)
     
     clean_bytes = svg_text.encode("utf-8")
-    
-    # Render PNG preview dengan batas ukuran aman (maksimal 2000px)
     png_data = cairosvg.svg2png(bytestring=clean_bytes, output_width=2000)
     
     img = Image.open(io.BytesIO(png_data))
-    
-    # Konversi RGBA ke RGB berlatar belakang putih
     if img.mode in ("RGBA", "LA", "P"):
         bg = Image.new("RGB", img.size, (255, 255, 255))
         if "A" in img.mode:
@@ -60,22 +52,21 @@ def fix_and_render_svg_preview(svg_bytes):
         img = img.convert("RGB")
         
     jpg_buf = io.BytesIO()
-    img.save(jpg_buf, format="JPEG", quality=92)
+    img.save(jpg_buf, format="JPEG", quality=95)
     return clean_bytes, jpg_buf.getvalue()
 
-tab_mag, tab_svg, tab_png = st.tabs([
-    "⭐ SVG ke EPS + JPG (Khusus Magnific)", 
+tab_mag, tab_pngtree, tab_svg, tab_png = st.tabs([
+    "⭐ Magnific (EPS + JPG Lepas)", 
+    "🌳 Pngtree (Auto-ZIP EPS+JPG)",
     "📐 SVG ke EPS Standar", 
     "🖼️ PNG ke JPG"
 ])
 
-# ==========================================================
-# TAB 1: KHUSUS MAGNIFIC / FREEPIK
-# ==========================================================
+# TAB 1: KHUSUS MAGNIFIC / FREEPIK (TETAP SAMA SEPERTI KEMARIN)
 with tab_mag:
     st.subheader("Konversi SVG ➔ EPS (>500KB) + JPG Preview")
     uploaded_mag_svgs = st.file_uploader(
-        "Pilih file SVG (bisa pilih banyak)",
+        "Pilih file SVG (bisa banyak)",
         type=["svg"],
         accept_multiple_files=True,
         key="uploader_mag_svg"
@@ -91,10 +82,7 @@ with tab_mag:
             jpg_name = f"{base_name}.jpg"
 
             try:
-                raw_svg = file.getvalue()
-                clean_svg_bytes, jpg_bytes = fix_and_render_svg_preview(raw_svg)
-
-                # Konversi ke EPS lalu pad di atas 500 KB
+                clean_svg_bytes, jpg_bytes = fix_and_render_svg_preview(file.getvalue())
                 raw_eps = cairosvg.svg2eps(bytestring=clean_svg_bytes)
                 padded_eps = pad_eps_file(raw_eps, target_min_bytes=600 * 1024)
                 
@@ -121,17 +109,61 @@ with tab_mag:
                     </div>
                     """
                     components.html(btn_html, height=45)
-
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
-# ==========================================================
-# TAB 2: SVG KE EPS STANDAR (SHUTTERSTOCK / ADOBE STOCK)
-# ==========================================================
+# TAB 2: KHUSUS PNGTREE (FITUR BARU AUTO-ZIP PER FILE)
+with tab_pngtree:
+    st.subheader("Konversi SVG ➔ Paket ZIP (EPS + JPG)")
+    st.caption("Otomatis membungkus EPS dan JPG ke satu file .ZIP siap upload Pngtree tanpa ekstrak.")
+    
+    uploaded_pngtree_svgs = st.file_uploader(
+        "Pilih file SVG untuk Pngtree (bisa banyak)",
+        type=["svg"],
+        accept_multiple_files=True,
+        key="uploader_pngtree_svg"
+    )
+
+    if uploaded_pngtree_svgs:
+        st.write(f"📁 Terpilih: **{len(uploaded_pngtree_svgs)} file**")
+        st.markdown("---")
+
+        for idx, file in enumerate(uploaded_pngtree_svgs):
+            base_name = file.name.rsplit(".", 1)[0]
+            zip_filename = f"{base_name}.zip"
+
+            try:
+                clean_svg_bytes, jpg_bytes = fix_and_render_svg_preview(file.getvalue())
+                eps_bytes = cairosvg.svg2eps(bytestring=clean_svg_bytes)
+
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                    zf.writestr(f"{base_name}.eps", eps_bytes)
+                    zf.writestr(f"{base_name}.jpg", jpg_bytes)
+
+                zip_data = zip_buffer.getvalue()
+                b64_zip = base64.b64encode(zip_data).decode()
+
+                col1, col2 = st.columns([3, 2])
+                with col1:
+                    st.write(f"📁 **{zip_filename}**")
+                with col2:
+                    btn_zip_html = f"""
+                    <a href="data:application/zip;base64,{b64_zip}" download="{zip_filename}" style="text-decoration: none;">
+                        <button style="background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 500; font-size: 13px; cursor: pointer;">
+                            ⬇️ Download ZIP
+                        </button>
+                    </a>
+                    """
+                    components.html(btn_zip_html, height=45)
+            except Exception as e:
+                st.error(f"Gagal memproses {file.name}: {e}")
+
+# TAB 3: SVG KE EPS STANDAR (TETAP SAMA SEPERTI KEMARIN)
 with tab_svg:
     st.subheader("Konversi SVG ke EPS Standar")
     uploaded_svgs = st.file_uploader(
-        "Pilih file SVG (bisa pilih banyak)",
+        "Pilih file SVG (bisa banyak)",
         type=["svg"],
         accept_multiple_files=True,
         key="uploader_svg_batch"
@@ -162,17 +194,14 @@ with tab_svg:
                     </a>
                     """
                     components.html(html_eps_button, height=45)
-
             except Exception as e:
                 st.error(f"Gagal mengonversi {file.name}: {e}")
 
-# ==========================================================
-# TAB 3: PNG KE JPG
-# ==========================================================
+# TAB 4: PNG KE JPG (TETAP SAMA SEPERTI KEMARIN)
 with tab_png:
     st.subheader("Konversi PNG ke JPG")
     uploaded_pngs = st.file_uploader(
-        "Pilih gambar PNG (bisa pilih banyak)", 
+        "Pilih gambar PNG (bisa banyak)", 
         type=["png"], 
         accept_multiple_files=True,
         key="uploader_png_batch"
@@ -208,6 +237,5 @@ with tab_png:
                     </a>
                     """
                     components.html(html_jpg_button, height=45)
-
             except Exception as e:
                 st.error(f"Gagal mengonversi {file.name}: {e}")

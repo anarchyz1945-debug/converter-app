@@ -26,7 +26,7 @@ def pad_eps_file(eps_bytes, target_min_bytes=600 * 1024):
         return eps_bytes + padding
     return eps_bytes
 
-def fix_and_render_svg_preview(svg_bytes):
+def clean_svg_string(svg_bytes):
     svg_text = svg_bytes.decode("utf-8", errors="ignore")
     if "viewBox" not in svg_text:
         w_match = re.search(r'width=["\']([0-9.]+)', svg_text)
@@ -36,11 +36,27 @@ def fix_and_render_svg_preview(svg_bytes):
             svg_text = re.sub(r'<svg', f'<svg viewBox="0 0 {w} {h}"', svg_text, count=1)
         else:
             svg_text = re.sub(r'<svg', '<svg viewBox="0 0 1000 1000"', svg_text, count=1)
+    return svg_text.encode("utf-8")
+
+# Generator Thumbnail khusus Pngtree (Format PNG, Transparan, Presisi 2000x2000 px)
+def generate_pngtree_thumbnail(clean_svg_bytes, target_size=(2000, 2000)):
+    raw_png = cairosvg.svg2png(bytestring=clean_svg_bytes, output_width=1800, output_height=1800)
+    img = Image.open(io.BytesIO(raw_png)).convert("RGBA")
     
-    clean_bytes = svg_text.encode("utf-8")
-    png_data = cairosvg.svg2png(bytestring=clean_bytes, output_width=2000)
+    # Letakkan gambar di tengah kanvas transparan 2000x2000
+    canvas = Image.new("RGBA", target_size, (0, 0, 0, 0))
+    paste_x = (target_size[0] - img.width) // 2
+    paste_y = (target_size[1] - img.height) // 2
+    canvas.paste(img, (paste_x, paste_y), mask=img)
     
-    img = Image.open(io.BytesIO(png_data))
+    buf = io.BytesIO()
+    canvas.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+# Generator Preview Magnific (JPG Latar Putih)
+def generate_magnific_jpg(clean_svg_bytes):
+    raw_png = cairosvg.svg2png(bytestring=clean_svg_bytes, output_width=2000)
+    img = Image.open(io.BytesIO(raw_png))
     if img.mode in ("RGBA", "LA", "P"):
         bg = Image.new("RGB", img.size, (255, 255, 255))
         if "A" in img.mode:
@@ -50,19 +66,18 @@ def fix_and_render_svg_preview(svg_bytes):
         img = bg
     elif img.mode != "RGB":
         img = img.convert("RGB")
-        
-    jpg_buf = io.BytesIO()
-    img.save(jpg_buf, format="JPEG", quality=95)
-    return clean_bytes, jpg_buf.getvalue()
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=95)
+    return buf.getvalue()
 
 tab_mag, tab_pngtree, tab_svg, tab_png = st.tabs([
     "⭐ Magnific (EPS + JPG Lepas)", 
-    "🌳 Pngtree (Auto-ZIP EPS+JPG)",
+    "🌳 Pngtree (Auto-ZIP EPS+PNG)",
     "📐 SVG ke EPS Standar", 
     "🖼️ PNG ke JPG"
 ])
 
-# TAB 1: KHUSUS MAGNIFIC / FREEPIK (TETAP SAMA SEPERTI KEMARIN)
+# TAB 1: KHUSUS MAGNIFIC
 with tab_mag:
     st.subheader("Konversi SVG ➔ EPS (>500KB) + JPG Preview")
     uploaded_mag_svgs = st.file_uploader(
@@ -82,9 +97,10 @@ with tab_mag:
             jpg_name = f"{base_name}.jpg"
 
             try:
-                clean_svg_bytes, jpg_bytes = fix_and_render_svg_preview(file.getvalue())
-                raw_eps = cairosvg.svg2eps(bytestring=clean_svg_bytes)
+                clean_svg = clean_svg_string(file.getvalue())
+                raw_eps = cairosvg.svg2eps(bytestring=clean_svg)
                 padded_eps = pad_eps_file(raw_eps, target_min_bytes=600 * 1024)
+                jpg_bytes = generate_magnific_jpg(clean_svg)
                 
                 b64_eps = base64.b64encode(padded_eps).decode()
                 b64_jpg = base64.b64encode(jpg_bytes).decode()
@@ -112,10 +128,10 @@ with tab_mag:
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
-# TAB 2: KHUSUS PNGTREE (FITUR BARU AUTO-ZIP PER FILE)
+# TAB 2: KHUSUS PNGTREE (ZIP BERISI EPS + PNG TRANS 2000x2000)
 with tab_pngtree:
-    st.subheader("Konversi SVG ➔ Paket ZIP (EPS + JPG)")
-    st.caption("Otomatis membungkus EPS dan JPG ke satu file .ZIP siap upload Pngtree tanpa ekstrak.")
+    st.subheader("Konversi SVG ➔ Paket ZIP Pngtree (EPS + PNG Transparan)")
+    st.caption("Otomatis membungkus EPS dan Thumbnail PNG 2000x2000 px ke dalam satu file .ZIP siap upload ke menu Png Upload.")
     
     uploaded_pngtree_svgs = st.file_uploader(
         "Pilih file SVG untuk Pngtree (bisa banyak)",
@@ -133,20 +149,22 @@ with tab_pngtree:
             zip_filename = f"{base_name}.zip"
 
             try:
-                clean_svg_bytes, jpg_bytes = fix_and_render_svg_preview(file.getvalue())
-                eps_bytes = cairosvg.svg2eps(bytestring=clean_svg_bytes)
+                clean_svg = clean_svg_string(file.getvalue())
+                eps_bytes = cairosvg.svg2eps(bytestring=clean_svg)
+                png_thumbnail = generate_pngtree_thumbnail(clean_svg)
 
+                # Masukkan EPS dan PNG ke dalam ZIP
                 zip_buffer = io.BytesIO()
                 with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
                     zf.writestr(f"{base_name}.eps", eps_bytes)
-                    zf.writestr(f"{base_name}.jpg", jpg_bytes)
+                    zf.writestr(f"{base_name}.png", png_thumbnail)
 
                 zip_data = zip_buffer.getvalue()
                 b64_zip = base64.b64encode(zip_data).decode()
 
                 col1, col2 = st.columns([3, 2])
                 with col1:
-                    st.write(f"📁 **{zip_filename}**")
+                    st.write(f"📁 **{zip_filename}** (EPS + PNG 2000px)")
                 with col2:
                     btn_zip_html = f"""
                     <a href="data:application/zip;base64,{b64_zip}" download="{zip_filename}" style="text-decoration: none;">
@@ -159,7 +177,7 @@ with tab_pngtree:
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
-# TAB 3: SVG KE EPS STANDAR (TETAP SAMA SEPERTI KEMARIN)
+# TAB 3: SVG KE EPS STANDAR
 with tab_svg:
     st.subheader("Konversi SVG ke EPS Standar")
     uploaded_svgs = st.file_uploader(
@@ -197,7 +215,7 @@ with tab_svg:
             except Exception as e:
                 st.error(f"Gagal mengonversi {file.name}: {e}")
 
-# TAB 4: PNG KE JPG (TETAP SAMA SEPERTI KEMARIN)
+# TAB 4: PNG KE JPG
 with tab_png:
     st.subheader("Konversi PNG ke JPG")
     uploaded_pngs = st.file_uploader(

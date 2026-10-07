@@ -35,27 +35,22 @@ def clean_svg_string(svg_bytes):
             w, h = w_match.group(1), h_match.group(1)
             svg_text = re.sub(r'<svg', f'<svg viewBox="0 0 {w} {h}"', svg_text, count=1)
         else:
-            svg_text = re.sub(r'<svg', '<svg viewBox="0 0 1000 1000"', svg_text, count=1)
+            svg_text = re.sub(r'<svg', '<svg viewBox="0 0 5000 5000"', svg_text, count=1)
     return svg_text.encode("utf-8")
 
-# Generator Thumbnail khusus Pngtree (Format PNG, Transparan, Presisi 2000x2000 px)
-def generate_pngtree_thumbnail(clean_svg_bytes, target_size=(2000, 2000)):
-    raw_png = cairosvg.svg2png(bytestring=clean_svg_bytes, output_width=1800, output_height=1800)
-    img = Image.open(io.BytesIO(raw_png)).convert("RGBA")
-    
-    # Letakkan gambar di tengah kanvas transparan 2000x2000
-    canvas = Image.new("RGBA", target_size, (0, 0, 0, 0))
-    paste_x = (target_size[0] - img.width) // 2
-    paste_y = (target_size[1] - img.height) // 2
-    canvas.paste(img, (paste_x, paste_y), mask=img)
-    
-    buf = io.BytesIO()
-    canvas.save(buf, format="PNG", optimize=True)
-    return buf.getvalue()
+# Generator PNG Pngtree: Full Size 5000x5000 px (Transparan Resolusi Tinggi)
+def generate_pngtree_fullsize_png(clean_svg_bytes):
+    # Render langsung ke ukuran asli 5000x5000 px
+    png_data = cairosvg.svg2png(
+        bytestring=clean_svg_bytes, 
+        output_width=5000, 
+        output_height=5000
+    )
+    return png_data
 
 # Generator Preview Magnific (JPG Latar Putih)
 def generate_magnific_jpg(clean_svg_bytes):
-    raw_png = cairosvg.svg2png(bytestring=clean_svg_bytes, output_width=2000)
+    raw_png = cairosvg.svg2png(bytestring=clean_svg_bytes, output_width=2500)
     img = Image.open(io.BytesIO(raw_png))
     if img.mode in ("RGBA", "LA", "P"):
         bg = Image.new("RGB", img.size, (255, 255, 255))
@@ -72,12 +67,14 @@ def generate_magnific_jpg(clean_svg_bytes):
 
 tab_mag, tab_pngtree, tab_svg, tab_png = st.tabs([
     "⭐ Magnific (EPS + JPG Lepas)", 
-    "🌳 Pngtree (Auto-ZIP EPS+PNG)",
+    "🌳 Pngtree (Auto-ZIP EPS+PNG 5000px)",
     "📐 SVG ke EPS Standar", 
     "🖼️ PNG ke JPG"
 ])
 
+# ==========================================================
 # TAB 1: KHUSUS MAGNIFIC
+# ==========================================================
 with tab_mag:
     st.subheader("Konversi SVG ➔ EPS (>500KB) + JPG Preview")
     uploaded_mag_svgs = st.file_uploader(
@@ -128,10 +125,12 @@ with tab_mag:
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
-# TAB 2: KHUSUS PNGTREE (ZIP BERISI EPS + PNG TRANS 2000x2000)
+# ==========================================================
+# TAB 2: KHUSUS PNGTREE (ZIP: EPS + PNG FULL 5000x5000 PX)
+# ==========================================================
 with tab_pngtree:
-    st.subheader("Konversi SVG ➔ Paket ZIP Pngtree (EPS + PNG Transparan)")
-    st.caption("Otomatis membungkus EPS dan Thumbnail PNG 2000x2000 px ke dalam satu file .ZIP siap upload ke menu Png Upload.")
+    st.subheader("Konversi SVG ➔ Paket ZIP Pngtree (EPS + PNG 5000px)")
+    st.caption("Otomatis membungkus EPS dan file PNG transparan 5000x5000 px ke dalam satu file .ZIP.")
     
     uploaded_pngtree_svgs = st.file_uploader(
         "Pilih file SVG untuk Pngtree (bisa banyak)",
@@ -151,20 +150,21 @@ with tab_pngtree:
             try:
                 clean_svg = clean_svg_string(file.getvalue())
                 eps_bytes = cairosvg.svg2eps(bytestring=clean_svg)
-                png_thumbnail = generate_pngtree_thumbnail(clean_svg)
+                png_bytes = generate_pngtree_fullsize_png(clean_svg)
 
                 # Masukkan EPS dan PNG ke dalam ZIP
                 zip_buffer = io.BytesIO()
                 with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
                     zf.writestr(f"{base_name}.eps", eps_bytes)
-                    zf.writestr(f"{base_name}.png", png_thumbnail)
+                    zf.writestr(f"{base_name}.png", png_bytes)
 
                 zip_data = zip_buffer.getvalue()
+                zip_size_kb = round(len(zip_data) / 1024)
                 b64_zip = base64.b64encode(zip_data).decode()
 
                 col1, col2 = st.columns([3, 2])
                 with col1:
-                    st.write(f"📁 **{zip_filename}** (EPS + PNG 2000px)")
+                    st.write(f"📁 **{zip_filename}** (`{zip_size_kb} KB`)")
                 with col2:
                     btn_zip_html = f"""
                     <a href="data:application/zip;base64,{b64_zip}" download="{zip_filename}" style="text-decoration: none;">
@@ -177,7 +177,9 @@ with tab_pngtree:
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
+# ==========================================================
 # TAB 3: SVG KE EPS STANDAR
+# ==========================================================
 with tab_svg:
     st.subheader("Konversi SVG ke EPS Standar")
     uploaded_svgs = st.file_uploader(
@@ -215,7 +217,9 @@ with tab_svg:
             except Exception as e:
                 st.error(f"Gagal mengonversi {file.name}: {e}")
 
+# ==========================================================
 # TAB 4: PNG KE JPG
+# ==========================================================
 with tab_png:
     st.subheader("Konversi PNG ke JPG")
     uploaded_pngs = st.file_uploader(
@@ -256,4 +260,4 @@ with tab_png:
                     """
                     components.html(html_jpg_button, height=45)
             except Exception as e:
-                st.error(f"Gagal mengonversi {file.name}: {e}")
+                st.error(f"Gagal mengonversi {file.name}: {e}") 

@@ -1,17 +1,17 @@
 import io
 import re
+import json
+import base64
 import zipfile
 import gc
 import streamlit as st
 from PIL import Image
 
-# Penanganan impor CairoSVG
 try:
     import cairosvg
 except Exception:
     cairosvg = None
 
-# Bebaskan batasan piksel Pillow
 Image.MAX_IMAGE_PIXELS = None
 
 st.set_page_config(
@@ -26,6 +26,57 @@ st.caption("Konversi SVG & PNG siap untuk Shutterstock, Adobe Stock, Magnific, P
 if cairosvg is None:
     st.error("Gagal memuat CairoSVG. Silakan periksa file packages.txt pada repositori GitHub.")
     st.stop()
+
+# Helper tombol unduh JavaScript: Anti-Reload & Dukung File Besar di Browser Tablet
+def render_instant_download_button(label, data_bytes, file_name, mime_type, bg_color="#0088cc"):
+    b64_str = base64.b64encode(data_bytes).decode("ascii")
+    payload = json.dumps({"b64": b64_str, "name": file_name, "mime": mime_type})
+    btn_id = f"btn_{abs(hash(file_name))}_{len(data_bytes)}"
+    
+    html_code = f"""
+    <div style="margin: 2px 0;">
+        <button id="{btn_id}" style="
+            background-color: {bg_color};
+            color: white;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            width: 100%;
+        ">{label}</button>
+    </div>
+    <script>
+    (function() {{
+        var btn = document.getElementById("{btn_id}");
+        if (btn) {{
+            btn.onclick = function() {{
+                var info = {payload};
+                var byteChars = atob(info.b64);
+                var byteNums = new Array(byteChars.length);
+                for (var i = 0; i < byteChars.length; i++) {{
+                    byteNums[i] = byteChars.charCodeAt(i);
+                }}
+                var byteArray = new Uint8Array(byteNums);
+                var blob = new Blob([byteArray], {{type: info.mime}});
+                var url = window.URL.createObjectURL(blob);
+                var a = document.createElement("a");
+                a.style.display = "none";
+                a.href = url;
+                a.download = info.name;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(function() {{
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                }}, 2000);
+            }};
+        }}
+    }})();
+    </script>
+    """
+    st.components.v1.html(html_code, height=45)
 
 def pad_eps_file(eps_bytes, target_min_bytes=600 * 1024):
     current_size = len(eps_bytes)
@@ -47,7 +98,6 @@ def clean_svg_string(svg_bytes):
             svg_text = re.sub(r'<svg', '<svg viewBox="0 0 5000 5000"', svg_text, count=1)
     return svg_text.encode("utf-8")
 
-# Render hemat RAM (Render 2000px -> Upscale Lanczos 5000px)
 def generate_jpg_preview(clean_svg_bytes, target_dim=5000):
     raw_png = cairosvg.svg2png(bytestring=clean_svg_bytes, output_width=2000, output_height=2000)
     img = Image.open(io.BytesIO(raw_png))
@@ -122,21 +172,9 @@ with tab_mag:
                 with col1:
                     st.write(f"📦 **{base_name}** (`{size_kb} KB`)")
                 with col2:
-                    st.download_button(
-                        label="⬇️ Unduh EPS",
-                        data=padded_eps,
-                        file_name=eps_name,
-                        mime="application/postscript",
-                        key=f"dl_eps_{idx}"
-                    )
+                    render_instant_download_button("⬇️ Unduh EPS", padded_eps, eps_name, "application/postscript", bg_color="#0088cc")
                 with col3:
-                    st.download_button(
-                        label="⬇️ JPG Preview",
-                        data=jpg_bytes,
-                        file_name=jpg_name,
-                        mime="image/jpeg",
-                        key=f"dl_jpg_{idx}"
-                    )
+                    render_instant_download_button("⬇️ Unduh JPG", jpg_bytes, jpg_name, "image/jpeg", bg_color="#FF4B4B")
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
@@ -173,17 +211,11 @@ with tab_pond5:
                 zip_data = zip_buffer.getvalue()
                 zip_size_kb = round(len(zip_data) / 1024)
 
-                col1, col2 = st.columns([3, 2])
+                col1, col2 = st.columns([3, 3])
                 with col1:
                     st.write(f"📁 **{zip_filename}** (`{zip_size_kb} KB`)")
                 with col2:
-                    st.download_button(
-                        label="⬇️ Download ZIP Pond5",
-                        data=zip_data,
-                        file_name=zip_filename,
-                        mime="application/zip",
-                        key=f"dl_pond5_{idx}"
-                    )
+                    render_instant_download_button("⬇️ Unduh ZIP Pond5", zip_data, zip_filename, "application/zip", bg_color="#0d6efd")
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
@@ -218,17 +250,11 @@ with tab_pngtree:
                 zip_data = zip_buffer.getvalue()
                 zip_size_kb = round(len(zip_data) / 1024)
 
-                col1, col2 = st.columns([3, 2])
+                col1, col2 = st.columns([3, 3])
                 with col1:
                     st.write(f"📁 **{zip_filename}** (`{zip_size_kb} KB`)")
                 with col2:
-                    st.download_button(
-                        label="⬇️ Download ZIP",
-                        data=zip_data,
-                        file_name=zip_filename,
-                        mime="application/zip",
-                        key=f"dl_pngtree_{idx}"
-                    )
+                    render_instant_download_button("⬇️ Unduh ZIP Pngtree", zip_data, zip_filename, "application/zip", bg_color="#28a745")
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
@@ -254,17 +280,11 @@ with tab_svg:
                 svg_bytes = file.getvalue()
                 eps_data = cairosvg.svg2eps(bytestring=svg_bytes)
 
-                col1, col2 = st.columns([3, 2])
+                col1, col2 = st.columns([3, 3])
                 with col1:
                     st.write(f"📐 **{eps_filename}**")
                 with col2:
-                    st.download_button(
-                        label="⬇️ Unduh EPS",
-                        data=eps_data,
-                        file_name=eps_filename,
-                        mime="application/postscript",
-                        key=f"dl_std_eps_{idx}"
-                    )
+                    render_instant_download_button("⬇️ Unduh EPS", eps_data, eps_filename, "application/postscript", bg_color="#FF4B4B")
             except Exception as e:
                 st.error(f"Gagal mengonversi {file.name}: {e}")
 
@@ -295,16 +315,10 @@ with tab_png:
                 image.save(jpg_buffer, format="JPEG", quality=100, subsampling=0)
                 jpg_bytes = jpg_buffer.getvalue()
 
-                col1, col2 = st.columns([3, 2])
+                col1, col2 = st.columns([3, 3])
                 with col1:
                     st.write(f"🖼️ **{jpg_filename}**")
                 with col2:
-                    st.download_button(
-                        label="⬇️ Unduh JPG",
-                        data=jpg_bytes,
-                        file_name=jpg_filename,
-                        mime="image/jpeg",
-                        key=f"dl_std_jpg_{idx}"
-                    )
+                    render_instant_download_button("⬇️ Unduh JPG", jpg_bytes, jpg_filename, "image/jpeg", bg_color="#FF4B4B")
             except Exception as e:
                 st.error(f"Gagal mengonversi {file.name}: {e}") 

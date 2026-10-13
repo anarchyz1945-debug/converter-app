@@ -2,10 +2,11 @@ import io
 import re
 import base64
 import zipfile
+import gc
 import streamlit as st
 from PIL import Image
 
-# Kompatibel versi Streamlit lama dan baru tanpa kendala height
+# Kompatibel versi Streamlit lama dan baru
 try:
     from streamlit import html as render_html
 except ImportError:
@@ -19,7 +20,7 @@ try:
 except Exception:
     cairosvg = None
 
-# Bebaskan batasan piksel untuk gambar 5000x5000 px
+# Bebaskan batas piksel Pillow
 Image.MAX_IMAGE_PIXELS = None
 
 st.set_page_config(
@@ -55,9 +56,16 @@ def clean_svg_string(svg_bytes):
             svg_text = re.sub(r'<svg', '<svg viewBox="0 0 5000 5000"', svg_text, count=1)
     return svg_text.encode("utf-8")
 
+# RENDER HEMAT RAM (Render 2000px -> Lanczos Upscale 5000px)
 def generate_jpg_preview(clean_svg_bytes, target_dim=5000):
-    raw_png = cairosvg.svg2png(bytestring=clean_svg_bytes, output_width=target_dim, output_height=target_dim)
+    raw_png = cairosvg.svg2png(bytestring=clean_svg_bytes, output_width=2000, output_height=2000)
     img = Image.open(io.BytesIO(raw_png))
+    
+    # Upscale tajam ke 5000x5000 px
+    if img.size != (target_dim, target_dim):
+        resample_filter = getattr(Image.Resampling, 'LANCZOS', Image.LANCZOS)
+        img = img.resize((target_dim, target_dim), resample=resample_filter)
+        
     if img.mode in ("RGBA", "LA", "P"):
         bg = Image.new("RGB", img.size, (255, 255, 255))
         if "A" in img.mode:
@@ -67,12 +75,24 @@ def generate_jpg_preview(clean_svg_bytes, target_dim=5000):
         img = bg
     elif img.mode != "RGB":
         img = img.convert("RGB")
+        
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=95)
+    del raw_png
+    gc.collect() # Bersihkan RAM server seketika
     return buf.getvalue()
 
 def generate_pngtree_fullsize_png(clean_svg_bytes):
-    return cairosvg.svg2png(bytestring=clean_svg_bytes, output_width=5000, output_height=5000)
+    raw_png = cairosvg.svg2png(bytestring=clean_svg_bytes, output_width=2500, output_height=2500)
+    img = Image.open(io.BytesIO(raw_png))
+    if img.size != (5000, 5000):
+        resample_filter = getattr(Image.Resampling, 'LANCZOS', Image.LANCZOS)
+        img = img.resize((5000, 5000), resample=resample_filter)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    del raw_png
+    gc.collect()
+    return buf.getvalue()
 
 tab_mag, tab_pond5, tab_pngtree, tab_svg, tab_png = st.tabs([
     "⭐ Magnific (EPS + JPG Lepas)", 
@@ -308,4 +328,4 @@ with tab_png:
                     """
                     render_html(html_jpg_button)
             except Exception as e:
-                st.error(f"Gagal mengonversi {file.name}: {e}") 
+                st.error(f"Gagal mengonversi {file.name}: {e}")

@@ -5,20 +5,21 @@ import zipfile
 import streamlit as st
 from PIL import Image
 
-# Penanganan impor render HTML agar kompatibel dengan seluruh versi Streamlit
+# Kompatibel versi Streamlit lama dan baru tanpa kendala height
 try:
     from streamlit import html as render_html
 except ImportError:
     import streamlit.components.v1 as components
-    render_html = components.html
+    def render_html(code):
+        components.html(code, height=45)
 
-# Penanganan impor CairoSVG agar tidak memicu crash instan jika pustaka C tertunda
+# Penanganan impor CairoSVG
 try:
     import cairosvg
-except Exception as e:
+except Exception:
     cairosvg = None
 
-# Matikan batasan piksel agar aman memproses resolusi 5000x5000 px
+# Bebaskan batasan piksel untuk gambar 5000x5000 px
 Image.MAX_IMAGE_PIXELS = None
 
 st.set_page_config(
@@ -128,7 +129,7 @@ with tab_mag:
                         </a>
                     </div>
                     """
-                    render_html(btn_html, height=45)
+                    render_html(btn_html)
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
@@ -177,7 +178,7 @@ with tab_pond5:
                         </button>
                     </a>
                     """
-                    render_html(btn_zip_html, height=45)
+                    render_html(btn_zip_html)
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
@@ -224,7 +225,7 @@ with tab_pngtree:
                         </button>
                     </a>
                     """
-                    render_html(btn_zip_html, height=45)
+                    render_html(btn_zip_html)
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
@@ -262,7 +263,7 @@ with tab_svg:
                         </button>
                     </a>
                     """
-                    render_html(html_eps_button, height=45)
+                    render_html(html_eps_button)
             except Exception as e:
                 st.error(f"Gagal mengonversi {file.name}: {e}")
 
@@ -305,6 +306,6 @@ with tab_png:
                         </button>
                     </a>
                     """
-                    render_html(html_jpg_button, height=45)
+                    render_html(html_jpg_button)
             except Exception as e:
-                st.error(f"Gagal mengonversi {file.name}: {e}")
+                st.error(f"Gagal mengonversi {file.name}: {e}") 

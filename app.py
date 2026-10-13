@@ -1,18 +1,9 @@
 import io
 import re
-import base64
 import zipfile
 import gc
 import streamlit as st
 from PIL import Image
-
-# Kompatibel versi Streamlit lama dan baru
-try:
-    from streamlit import html as render_html
-except ImportError:
-    import streamlit.components.v1 as components
-    def render_html(code):
-        components.html(code, height=45)
 
 # Penanganan impor CairoSVG
 try:
@@ -20,7 +11,7 @@ try:
 except Exception:
     cairosvg = None
 
-# Bebaskan batas piksel Pillow
+# Bebaskan batasan piksel Pillow
 Image.MAX_IMAGE_PIXELS = None
 
 st.set_page_config(
@@ -56,12 +47,11 @@ def clean_svg_string(svg_bytes):
             svg_text = re.sub(r'<svg', '<svg viewBox="0 0 5000 5000"', svg_text, count=1)
     return svg_text.encode("utf-8")
 
-# RENDER HEMAT RAM (Render 2000px -> Lanczos Upscale 5000px)
+# Render hemat RAM (Render 2000px -> Upscale Lanczos 5000px)
 def generate_jpg_preview(clean_svg_bytes, target_dim=5000):
     raw_png = cairosvg.svg2png(bytestring=clean_svg_bytes, output_width=2000, output_height=2000)
     img = Image.open(io.BytesIO(raw_png))
     
-    # Upscale tajam ke 5000x5000 px
     if img.size != (target_dim, target_dim):
         resample_filter = getattr(Image.Resampling, 'LANCZOS', Image.LANCZOS)
         img = img.resize((target_dim, target_dim), resample=resample_filter)
@@ -79,7 +69,7 @@ def generate_jpg_preview(clean_svg_bytes, target_dim=5000):
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=95)
     del raw_png
-    gc.collect() # Bersihkan RAM server seketika
+    gc.collect()
     return buf.getvalue()
 
 def generate_pngtree_fullsize_png(clean_svg_bytes):
@@ -126,30 +116,27 @@ with tab_mag:
                 raw_eps = cairosvg.svg2eps(bytestring=clean_svg)
                 padded_eps = pad_eps_file(raw_eps, target_min_bytes=600 * 1024)
                 jpg_bytes = generate_jpg_preview(clean_svg, target_dim=5000)
-                
-                b64_eps = base64.b64encode(padded_eps).decode()
-                b64_jpg = base64.b64encode(jpg_bytes).decode()
                 size_kb = round(len(padded_eps) / 1024)
 
-                col1, col2 = st.columns([3, 3])
+                col1, col2, col3 = st.columns([3, 2, 2])
                 with col1:
                     st.write(f"📦 **{base_name}** (`{size_kb} KB`)")
                 with col2:
-                    btn_html = f"""
-                    <div style="display: flex; gap: 8px;">
-                        <a href="data:application/postscript;base64,{b64_eps}" download="{eps_name}" style="text-decoration: none;">
-                            <button style="background-color: #0088cc; color: white; border: none; padding: 7px 12px; border-radius: 6px; font-weight: 500; font-size: 13px; cursor: pointer;">
-                                ⬇️ EPS
-                            </button>
-                        </a>
-                        <a href="data:image/jpeg;base64,{b64_jpg}" download="{jpg_name}" style="text-decoration: none;">
-                            <button style="background-color: #FF4B4B; color: white; border: none; padding: 7px 12px; border-radius: 6px; font-weight: 500; font-size: 13px; cursor: pointer;">
-                                ⬇️ JPG Preview
-                            </button>
-                        </a>
-                    </div>
-                    """
-                    render_html(btn_html)
+                    st.download_button(
+                        label="⬇️ Unduh EPS",
+                        data=padded_eps,
+                        file_name=eps_name,
+                        mime="application/postscript",
+                        key=f"dl_eps_{idx}"
+                    )
+                with col3:
+                    st.download_button(
+                        label="⬇️ JPG Preview",
+                        data=jpg_bytes,
+                        file_name=jpg_name,
+                        mime="image/jpeg",
+                        key=f"dl_jpg_{idx}"
+                    )
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
@@ -185,20 +172,18 @@ with tab_pond5:
 
                 zip_data = zip_buffer.getvalue()
                 zip_size_kb = round(len(zip_data) / 1024)
-                b64_zip = base64.b64encode(zip_data).decode()
 
                 col1, col2 = st.columns([3, 2])
                 with col1:
                     st.write(f"📁 **{zip_filename}** (`{zip_size_kb} KB`)")
                 with col2:
-                    btn_zip_html = f"""
-                    <a href="data:application/zip;base64,{b64_zip}" download="{zip_filename}" style="text-decoration: none;">
-                        <button style="background-color: #0d6efd; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 500; font-size: 13px; cursor: pointer;">
-                            ⬇️ Download ZIP Pond5
-                        </button>
-                    </a>
-                    """
-                    render_html(btn_zip_html)
+                    st.download_button(
+                        label="⬇️ Download ZIP Pond5",
+                        data=zip_data,
+                        file_name=zip_filename,
+                        mime="application/zip",
+                        key=f"dl_pond5_{idx}"
+                    )
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
@@ -232,20 +217,18 @@ with tab_pngtree:
 
                 zip_data = zip_buffer.getvalue()
                 zip_size_kb = round(len(zip_data) / 1024)
-                b64_zip = base64.b64encode(zip_data).decode()
 
                 col1, col2 = st.columns([3, 2])
                 with col1:
                     st.write(f"📁 **{zip_filename}** (`{zip_size_kb} KB`)")
                 with col2:
-                    btn_zip_html = f"""
-                    <a href="data:application/zip;base64,{b64_zip}" download="{zip_filename}" style="text-decoration: none;">
-                        <button style="background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 500; font-size: 13px; cursor: pointer;">
-                            ⬇️ Download ZIP
-                        </button>
-                    </a>
-                    """
-                    render_html(btn_zip_html)
+                    st.download_button(
+                        label="⬇️ Download ZIP",
+                        data=zip_data,
+                        file_name=zip_filename,
+                        mime="application/zip",
+                        key=f"dl_pngtree_{idx}"
+                    )
             except Exception as e:
                 st.error(f"Gagal memproses {file.name}: {e}")
 
@@ -270,20 +253,18 @@ with tab_svg:
             try:
                 svg_bytes = file.getvalue()
                 eps_data = cairosvg.svg2eps(bytestring=svg_bytes)
-                b64_eps = base64.b64encode(eps_data).decode()
 
                 col1, col2 = st.columns([3, 2])
                 with col1:
                     st.write(f"📐 **{eps_filename}**")
                 with col2:
-                    html_eps_button = f"""
-                    <a href="data:application/postscript;base64,{b64_eps}" download="{eps_filename}" style="text-decoration: none;">
-                        <button style="background-color: #FF4B4B; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 500; font-size: 14px; cursor: pointer;">
-                            ⬇️ Unduh EPS
-                        </button>
-                    </a>
-                    """
-                    render_html(html_eps_button)
+                    st.download_button(
+                        label="⬇️ Unduh EPS",
+                        data=eps_data,
+                        file_name=eps_filename,
+                        mime="application/postscript",
+                        key=f"dl_std_eps_{idx}"
+                    )
             except Exception as e:
                 st.error(f"Gagal mengonversi {file.name}: {e}")
 
@@ -313,19 +294,17 @@ with tab_png:
                 jpg_buffer = io.BytesIO()
                 image.save(jpg_buffer, format="JPEG", quality=100, subsampling=0)
                 jpg_bytes = jpg_buffer.getvalue()
-                b64_jpg = base64.b64encode(jpg_bytes).decode()
 
                 col1, col2 = st.columns([3, 2])
                 with col1:
                     st.write(f"🖼️ **{jpg_filename}**")
                 with col2:
-                    html_jpg_button = f"""
-                    <a href="data:image/jpeg;base64,{b64_jpg}" download="{jpg_filename}" style="text-decoration: none;">
-                        <button style="background-color: #FF4B4B; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 500; font-size: 14px; cursor: pointer;">
-                            ⬇️ Unduh JPG
-                        </button>
-                    </a>
-                    """
-                    render_html(html_jpg_button)
+                    st.download_button(
+                        label="⬇️ Unduh JPG",
+                        data=jpg_bytes,
+                        file_name=jpg_filename,
+                        mime="image/jpeg",
+                        key=f"dl_std_jpg_{idx}"
+                    )
             except Exception as e:
-                st.error(f"Gagal mengonversi {file.name}: {e}")
+                st.error(f"Gagal mengonversi {file.name}: {e}") 
